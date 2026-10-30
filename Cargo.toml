@@ -26,9 +26,9 @@ members = [
 
 [workspace.dependencies]
 anstream = "1"
-anyhow = "1"
-assert_matches = "1"
-base32 = "0.5"
+anyhow = "1.0.104"
+assert_matches = "1.5.0"
+base32 = "0.5.1"
 byte-strings = "0.3"
 bytefmt = "0.1"
 capnp = "0.27"
