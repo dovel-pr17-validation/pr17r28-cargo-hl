@@ -1,0 +1,311 @@
+# Justfile for hl project - convenient command runner
+# Run `just --list` to see all available commands
+
+set lazy
+
+# NixOS helpers
+
+nix-files := "flake.nix nix/*.nix"
+nix-docker-image := "hl-nixos-helper"
+nix-docker-base := """
+    docker run --rm \
+        -t \
+        --platform=linux/$(uname -m) \
+        --security-opt seccomp=unconfined \
+        -v "$(pwd)":/etc/nixos \
+        -w /etc/nixos \
+        """
+nix-docker := nix-docker-base + nix-docker-image + " "
+nix-result := ".build/nix"
+
+# Previous version tag
+previous-tag := shell("git tag -l \"v*.*.*\" --merged HEAD --sort=-version:refname | head -1")
+
+# Repository state, needed for build metadata in the resulting version
+repository-state := shell('git rev-parse HEAD') / if shell('git status --porcelain') == '' { 'clean' } else { 'dirty' }
+
+# Export repository state for the cargo build script
+export HL_BUILD_SRC_STATE := repository-state
+
+# Recipes
+
+# Default recipe, executed on `just` without arguments
+[private]
+default:
+    @just --list
+
+[doc('Build the project in debug mode')]
+build: (setup "build")
+    cargo build
+
+[doc('Build the project in release mode')]
+build-release: (setup "build")
+    cargo build --release
+
+[doc('Run the application, example: `just run -- --help`')]
+run *args: build
+    cargo run -- {{ args }}
+
+[doc('Run tests for all packages in the workspace')]
+test: (setup "build")
+    cargo test --workspace
+
+[doc('Check the code for errors without building an executable')]
+check: (setup "build")
+    cargo check --workspace --locked
+
+[doc('Lint all code')]
+lint: lint-rust lint-markdown
+
+[doc('• Lint Rust')]
+lint-rust: clippy
+
+[doc('• Lint Markdown files')]
+lint-markdown: (setup "markdown-lint")
+    @markdownlint-cli2 "*.md"
+
+# Run the Rust linter (clippy)
+[private]
+clippy: (setup "clippy")
+    cargo clippy --workspace --all-targets --all-features
+
+[doc('Automatically fix linting issues where possible')]
+fix: fix-markdown fix-clippy
+
+[private]
+fix-clippy: (setup "clippy")
+    cargo clippy --workspace --all-targets --all-features --fix --allow-dirty --allow-staged
+
+[private]
+fix-markdown: (setup "markdown-lint")
+    @markdownlint-cli2 "*.md" --fix
+
+[doc('Check for security vulnerabilities in dependencies')]
+audit: (setup "audit")
+    cargo audit
+
+[doc('Check for outdated dependencies')]
+outdated: (setup "outdated")
+    cargo outdated --workspace
+
+[doc('Format all Rust and Nix files')]
+fmt: fmt-rust fmt-nix fmt-toml
+    @echo "✓ All files formatted successfully"
+
+[doc('Format Rust code')]
+fmt-rust: (setup "build-nightly")
+    cargo +nightly fmt --all
+
+[doc('Format Nix files')]
+fmt-nix: (run-nixfmt nix-files)
+
+[doc('Format TOML files')]
+fmt-toml: (setup "schema")
+    tombi format
+
+[doc('Check formatting without applying changes (for CI)')]
+fmt-check: fmt-check-rust fmt-check-nix
+    @echo "✓ Formatting is correct"
+
+[doc('Check Rust formatting')]
+fmt-check-rust: (setup "build-nightly")
+    @cargo +nightly fmt --all --check
+
+[doc('Check Nix formatting')]
+fmt-check-nix:
+    @if command -v nix > /dev/null; then \
+        nix fmt --check; \
+    fi
+
+[doc('Clean build artifacts')]
+clean:
+    cargo clean
+    @rm -f result*
+
+[doc('Run all CI checks locally')]
+ci: check test lint audit fmt-check check-schema
+    @echo "✅ All local CI checks passed"
+
+[doc('Generate code coverage')]
+coverage: (setup "coverage")
+    @bash build/ci/coverage.sh
+
+[doc('Show uncovered changed lines comparing to {{base}}')]
+uncovered base="origin/master": (setup "coverage")
+    @scripts/coverage-diff-analysis.py -q --ide-links {{ base }}
+
+[doc('Run benchmarks')]
+bench *args: (setup "build")
+    cargo bench --workspace --locked {{ args }}
+
+[doc('Check schema validation')]
+check-schema: (setup "schema")
+    tombi lint
+    taplo check
+
+# Regenerates the checked-in Cap'n Proto bindings with the compiler pinned in `flake.lock`.
+#
+# The compiler stamps its own version into the generated sources, so taking it from the flake keeps
+# the result identical everywhere rather than depending on what happens to be installed locally. The
+# Rust toolchain comes from the same place because the fallback container has none; a machine with
+# `nix` installed uses it directly, one without falls back to Docker.
+[doc("Regenerate the Cap'n Proto bindings with the pinned compiler")]
+regenerate-capnp: (run-nix "shell" "--inputs-from" "path:." "nixpkgs#capnproto" "nixpkgs#cargo" "nixpkgs#rustc" "nixpkgs#gcc" "--command" "contrib/bin/regenerate-capnp.sh")
+
+[doc('Install binary and man pages')]
+install: (setup "build") install-man-pages
+    cargo install --path . --locked
+
+[doc('Install binary and man pages and copy with versioned name')]
+install-versioned: install
+    @cp ~/.cargo/bin/hl ~/.cargo/bin/$(~/.cargo/bin/hl --version | tr ' ' '-')
+
+[doc('Install man pages')]
+[script]
+install-man-pages:
+    set -euo pipefail
+    mkdir -p ~/share/man/man1
+    cargo run --release --locked -- --config - --man-page >~/share/man/man1/hl.1.tmp
+    mv -f ~/share/man/man1/hl.1.tmp ~/share/man/man1/hl.1
+    echo $(tput setaf 3)NOTE:$(tput sgr0) ensure $(tput setaf 2)~/share/man$(tput sgr0) is added to $(tput setaf 2)MANPATH$(tput sgr0) environment variable
+
+[doc('Build and publish new release')]
+release type="patch": (setup "cargo-edit")
+    gh workflow run -R pamburus/hl release.yml --ref $(git branch --show-current) --field release-type={{ type }}
+
+[doc('Show current version')]
+version:
+    @cargo read-manifest | jq -r .version
+
+[doc('Bump version')]
+bump type="alpha": (setup "cargo-edit")
+    cargo set-version --package hl --bump {{ type }}
+
+[doc('List changes since the previous release')]
+[script]
+changes since="auto": (setup "git-cliff" "bat" "gh")
+    set -euo pipefail
+    since={{ if since == 'auto' { previous-tag } else { since } }}
+    version=$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "hl") | .version')
+    GITHUB_REPO=pamburus/hl \
+    GITHUB_TOKEN=$(gh auth token) \
+        git-cliff --tag "v${version:?}" "${since:?}..HEAD" \
+        | bat -l md --paging=never
+
+[doc('Show previous release tag')]
+previous-tag:
+    @echo {{ previous-tag }}
+
+[doc('Create screenshots')]
+screenshots: (setup "screenshots") build
+    @bash contrib/bin/screenshot.sh light cafe.log
+    @bash contrib/bin/screenshot.sh dark cafe.log
+
+[doc('Nix-specific commands (require Nix to be installed)')]
+nix-dev:
+    nix develop
+
+[doc('Run all Nix flake checks')]
+nix-check: (run-nix "flake" "check" "--all-systems" "--print-build-logs")
+
+[doc('Update all Nix flake inputs')]
+nix-update: (run-nix "flake" "update")
+
+[doc('Build all defined Nix package variants')]
+nix-build: (run-nix "build" ".#default" "--out-link" (nix-result / "default")) (run-nix "build" ".#bin" "--out-link" (nix-result / "bin"))
+
+[doc('Show the dependency tree of the Nix derivation')]
+nix-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v nix-tree > /dev/null; then
+        nix-tree ./result
+    else
+        echo "Error: nix-tree is not installed. Run 'nix develop' to enter a shell where it is available"
+    fi
+
+[doc('Show `hl --help`')]
+usage *args: build
+    @./target/debug/hl --config - --help {{ args }}
+
+[doc('Show `hl --help=long`')]
+usage-long *args: build
+    @./target/debug/hl --config - --help=long {{ args }}
+
+[doc('Convert all Mermaid (.mmd) files to SVG')]
+mmd2svg:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Check if Docker is available
+    if ! command -v docker > /dev/null; then
+        echo "Error: Docker is not installed"
+        echo "Please install Docker from: https://www.docker.com/get-started"
+        exit 1
+    fi
+
+    # Check if Docker daemon is running
+    if ! docker info > /dev/null 2>&1; then
+        echo "Error: Docker is not running"
+        echo "Please start Docker Desktop or your Docker daemon"
+        exit 1
+    fi
+
+    # Find and convert all .mmd files
+    find . -name "*.mmd" -type f | while read -r mmd_file; do
+        svg_file="${mmd_file%.mmd}.svg"
+
+        # Get absolute paths
+        abs_mmd_file=$(pwd)/"$mmd_file"
+        abs_svg_file=$(pwd)/"$svg_file"
+        mmd_dir=$(dirname "$abs_mmd_file")
+        mmd_name=$(basename "$mmd_file")
+        svg_name=$(basename "$svg_file")
+
+        echo "Converting: $mmd_file → $svg_file"
+
+        # Run mermaid-cli in Docker
+        docker run --rm -u $(id -u):$(id -g) \
+            -v "$mmd_dir":/data \
+            minlag/mermaid-cli:latest \
+            -i "/data/$mmd_name" \
+            -o "/data/$svg_name" \
+            -b transparent
+    done
+
+    echo "✓ All Mermaid files converted to SVG"
+
+# Helper function to run a command locally or in Docker if not installed
+[private]
+nix-run-local-or-docker docker cmd *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v {{ cmd }} >/dev/null 2>&1; then
+        {{ cmd }} {{ args }}
+    else
+        just build-nix-docker-image
+        {{ docker }} {{ cmd }} {{ args }}
+    fi
+
+# Helper function to run nix commands locally or in Docker
+[private]
+run-nix *args: (nix-run-local-or-docker nix-docker "nix" args)
+
+# Helper function to run nixfmt commands locally or in Docker
+[private]
+run-nixfmt *args: (nix-run-local-or-docker nix-docker "nixfmt" args)
+
+# Helper function to build NixOS docker image
+[private]
+build-nix-docker-image:
+    docker build -t {{ nix-docker-image }} build/docker/nix
+
+# Helper recipe to ensure required tools are available for a given task
+[private]
+setup *tools:
+    @contrib/bin/setup.sh {{ tools }}
+
+# Helper to evaluate repository state hash needed for version build metadata
+[private]
+repository-state:
+    @echo {{ repository-state }}

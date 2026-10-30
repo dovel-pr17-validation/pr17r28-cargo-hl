@@ -1,0 +1,11 @@
+[package]
+name = "serde-logfmt"
+version = "0.1.2"
+edition.workspace = true
+description = "Logfmt decoding based on serde"
+repository.workspace = true
+license.workspace = true
+workspace = "../.."
+
+[dependencies]
+serde.workspace = true

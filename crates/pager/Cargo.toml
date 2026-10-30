@@ -1,0 +1,11 @@
+[package]
+name = "pager"
+version = "0.1.0"
+edition.workspace = true
+description = "Pager process management for terminal output"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+log.workspace = true
+shellwords.workspace = true

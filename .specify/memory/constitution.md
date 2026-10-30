@@ -1,0 +1,200 @@
+<!--
+Sync Impact Report:
+- Version: 1.5.0 → 1.6.0
+- Modified Sections:
+  - Development Workflow & Quality Gates (Versioning of Pull Requests): the bump is now derived from each PR's SemVer impact, for every PR targeting `master` or a `release/*` branch. Feature-branch PRs never bump. `release/*` branches accept only patch-level changes.
+  - Technology Stack & Standards (Compatibility): breaking changes bump the minor version while on 0.x, and the major version from 1.0 onwards.
+  - Development Workflow & Quality Gates (Backwards Compatibility): aligned with the 0.x rule. Compatibility is guaranteed across patch versions on 0.x, and across minor versions from 1.0 onwards.
+- Rationale: MINOR version bump. The versioning guidance is materially expanded: a SemVer-based bump for all PRs to release lines, release branches, and 0.x breaking-change handling. No principle is removed.
+- Templates requiring updates:
+  - ✅ plan-template.md: Compatible - no version-related steps
+  - ✅ spec-template.md: Compatible - no version-related steps
+  - ✅ tasks-template.md: Compatible - no version-related steps
+- Follow-up TODOs: none
+- Date: 2026-10-20
+-->
+
+# hl (High-performance Log viewer) Constitution
+<!-- A high-performance log viewer and processor command-line app -->
+
+## Core Principles
+
+### I. Performance First
+<!-- Performance is non-negotiable -->
+Every design decision prioritizes speed and memory efficiency. Streaming processing handles logs of unlimited size without loading entire files into memory. Rust as the implementation language ensures predictable performance. Benchmarks track performance regressions and must pass before merging.
+
+### II. Composability & Modularity
+<!-- Features built as reusable components -->
+Clear separation between core filtering engine, parsing modules, and output formatters. Each component has well-defined interfaces enabling independent testing and extension. The filtering and formatting pipeline is extensible for custom processors without modifying core code.
+
+### III. User Experience & Intuitiveness
+<!-- CLI should be intuitive and helpful -->
+Sensible defaults for common workflows. Primary output designed for human readability using ANSI colors and styles. Progressive disclosure of advanced options in help text. Error messages are actionable and guide users toward solutions. No silent failures.
+
+### IV. Reliability & Robustness
+<!-- Data integrity is paramount -->
+Comprehensive error handling with graceful degradation. All input validated; malformed logs processed without panicking. No data loss on edge cases. Streaming ensures memory-bounded execution regardless of input size. Clear documentation of supported log formats and limitations.
+
+### V. Test-First Development & Quality
+<!-- TDD mandatory; no exceptions for performance-critical code -->
+Unit tests for algorithms and parsers. Integration tests for end-to-end CLI workflows. Property-based tests for streaming behavior. Performance benchmarks tracked and enforced. All tests must pass before merging. Coverage must not decrease: patches must maintain or improve the project's average code coverage.
+
+**Schema Validation Requirements:**
+When modifying configuration file structure (`src/settings.rs`, `etc/defaults/config.toml`) or theme configuration files, the corresponding JSON schema files (`schema/json/config.schema.json`, `schema/json/theme.schema.*.json`) MUST be updated to reflect the changes.
+
+**Schema Build Workflow:**
+After updating schema files, the following workflow MUST be followed:
+1. Run `cargo build` to automatically update embedded schema references
+2. Only after build completes successfully, run `just ci` for validation
+3. This order is mandatory because the build process updates schema references that CI validates
+
+This ensures:
+- Configuration validation tooling remains accurate
+- IDE autocomplete and validation work correctly
+- Documentation stays synchronized with implementation
+- Embedded schema references are current before validation
+
+**Coverage Validation Requirements:**
+After implementing any new feature, run `just uncovered` to identify changed lines lacking test coverage. If uncovered lines appear:
+- MUST add tests to cover them unless they require environmental interaction (file I/O, network, OS-specific behavior)
+- Document why coverage cannot be added if environmental interaction prevents testing
+- Aim to maintain or improve overall project coverage percentage
+
+This ensures new features are properly tested and maintains the high-quality bar established by existing code.
+
+### VI. Specification & Cross-Reference Integrity
+<!-- Maintain referential integrity across all documentation and code -->
+**Avoid renumbering identifiers whenever possible.** Prefer adding new requirements at the end of sections or using sub-identifiers (e.g., FR-030c, FR-030d) to insert requirements without disrupting existing numbering.
+
+When renumbering identifiers (FR/requirement IDs, user story IDs, feature numbers, etc.) is unavoidable, all cross-references MUST be identified and updated throughout the complete codebase including specs, documentation, code comments, and tests. Before renumbering any requirement or feature:
+
+1. Search entire codebase for references to affected IDs using patterns like `FR-XXX`, `US-XXX`, feature numbers
+2. Update ALL found references to reflect new identifiers
+3. Verify tests still pass after updates
+4. Document the ID mapping in commit message (e.g., "renamed FR-037d → FR-039d")
+
+This ensures specifications remain the single source of truth and prevents broken references that make requirements untraceable. Use grep/search tools with patterns covering all identifier formats before any renumbering operation.
+
+### VII. Test Data Management
+<!-- Separate test logic from test data -->
+Tests MUST use external data files instead of inline multiline string literals for themes, configs, and other structured data. This improves maintainability, enables proper validation tooling, and separates test logic from test data.
+
+**Requirements:**
+- Theme and config test data MUST be stored in dedicated test asset directories (e.g., `src/testing/assets/themes/`)
+- Test files SHOULD use the same format as production files (YAML, TOML, JSON)
+- Tests MAY embed external files at compile time using `include_str!` or similar if needed for performance
+- Inline strings are acceptable ONLY for very short values (<3 lines) or when the string content itself is what's being tested (e.g., parse error messages)
+
+**Rationale:**
+- External files can be validated with proper tooling (YAML/TOML linters)
+- Easier to reuse test data across multiple tests
+- Better separation of concerns improves test readability
+- Compile-time embedding provides same performance as inline strings
+
+## Technology Stack & Standards
+
+**Language**: Rust (enforced for reliability and performance)
+**Build System**: Cargo
+**Testing**: cargo test, criterion for benchmarks, proptest for property-based tests
+**Output Format**: Primary output designed for human readability using ANSI colors and styles. Additional formats (JSON, etc.) may be added as needed but are not required.
+**Compatibility**: SEMVER for versioning. From 1.0 onwards, breaking changes require a major version bump and a migration guide. While on 0.x, breaking changes bump the minor version and still require a migration guide.
+**Documentation**: README, man pages, inline examples, architecture decision records for major changes
+
+## Development Workflow & Quality Gates
+
+**Code Review**: All PRs require at least one review. Performance-sensitive changes require benchmark verification.
+
+**Testing Gates**: All tests must pass (`cargo test`). Benchmarks must not regress (`cargo bench`). Clippy warnings must be resolved.
+
+**Documentation**: Features documented before or concurrent with implementation. Breaking changes documented in CHANGELOG.
+
+**Performance**: New features benchmarked. Regressions >5% must be justified and documented.
+
+**Backwards Compatibility**: From 1.0 onwards, maintained across minor versions. While on 0.x, maintained across patch versions. Breaking minor bumps are allowed but SHOULD be avoided. Deprecation period required before removing features.
+
+**Versioning of Pull Requests**: The version identifies a state of a release line (`master` or a `release/*` branch), not a working branch.
+
+- Every PR targeting `master` or a `release/*` branch MUST bump the version according to the SemVer impact of its change. The impact is measured against the last release tag on that line.
+- PRs targeting a feature branch MUST NOT change the version. Feature branches keep the version of the line they were branched from, and pick up its bumps by rebasing or merging as usual. The PR that merges a feature branch into a release line follows the steps below like any other PR.
+- `release/*` branches MUST accept only patch-level changes: fixes and changes with no SemVer impact.
+
+Each such PR MUST set the version as follows, after rebasing onto the latest target branch:
+
+1. Run `git fetch -t && just previous-tag` to get the last release tag on the line (e.g., `v0.36.4`). Run `just version` to get the current version (e.g., `0.36.5-alpha.3`).
+2. Determine the next release the line now requires, from the highest-impact change since that tag, including this PR:
+   - breaking change → next major (`(major+1).0.0`). While on 0.x, a breaking change bumps the minor version instead (`0.(minor+1).0`).
+   - new feature → next minor (`major.(minor+1).0`)
+   - fixes only → next patch (`major.minor.(patch+1)`)
+3. If the current version is already a pre-release of that release, or of a higher one, run `just bump` to increment its alpha (e.g., `0.37.0-alpha.1` → `0.37.0-alpha.2`). Otherwise run `cargo set-version <next release>-alpha.1` (e.g., `cargo set-version 0.37.0-alpha.1`).
+4. Changes with no SemVer impact (docs, chores, CI, refactoring, dependency updates without behavior changes) MUST still run `just bump`, so every merged state of the line has a unique version.
+
+Example: after `v0.36.4`, the first fix sets `0.36.5-alpha.1`, a later feature sets `0.37.0-alpha.1`, and a fix after that sets `0.37.0-alpha.2`.
+
+**Rationale**: Versions identify releases of a single line. Deriving the bump from the change's SemVer impact keeps the pre-release version an accurate preview of the next release. Assigning it only on the release line keeps every version unique and in order. If parallel feature branches each claimed the next minor alpha, they would produce identical pre-release versions with different contents, which violates SemVer's rule that a released version's contents never change, and early bumps would conflict with every bump on the line.
+
+**Commit Workflow**: When using speckit workflow commands, commits MUST follow this discipline:
+
+1. **Pre-commit Validation**: Before ANY commit, run `just ci` which executes:
+   - `check`: Cargo check for compilation errors
+   - `test`: Full test suite execution
+   - `lint`: Clippy warnings resolution
+   - `audit`: Security vulnerability checks
+   - `fmt-check`: Code formatting verification
+   - `check-schema`: JSON schema validation
+
+   ALL reported issues MUST be resolved before proceeding with the commit.
+
+2. **Conventional Commits**: After completing each speckit step, create a commit using conventional commit format:
+   - After `/speckit-specify`: `docs(spec): add [feature-name] specification`
+   - After `/speckit-clarify`: `docs(spec): clarify [aspect] in [feature-name]`
+   - After `/speckit-tasks`: `docs(tasks): generate task breakdown for [feature-name]`
+   - After `/speckit-implement`: `feat([scope]): [user-visible change]` or `fix([scope]): [user-visible fix]`
+
+3. **Commit Message Content Guidelines**:
+   Commit messages are used to automatically generate release notes and MUST focus on user-visible behavior:
+
+   **DO write about**:
+   - New features users can access
+   - Bug fixes that affect user experience
+   - Configuration options added or changed
+   - Command-line flags or arguments modified
+   - Output format changes
+   - Performance improvements users will notice
+   - Breaking changes requiring user action
+
+   **DO NOT write about**:
+   - Implementation details (functions, structs, modules)
+   - Source code references (file names, line numbers)
+   - Test statistics ("1464 tests passing")
+   - CI validation status ("Full CI validation passed")
+   - Internal refactoring unless it affects users
+   - Code quality metrics
+
+   **Exception**: Internal changes with no user-visible impact may include brief technical context, but still avoid source code specifics. Focus on "what changed" in system behavior, not "how it was implemented."
+
+   **Examples**:
+   - ✅ Good: `feat(config): add prettify-field-keys option to control key prettification`
+   - ✅ Good: `fix(parser): handle timestamps with microsecond precision correctly`
+   - ❌ Bad: `feat(formatting): implement prettify_field_keys in RecordFormatter struct`
+   - ❌ Bad: `fix: update formatting.rs line 1211 to check prettify flag. All 1464 tests pass`
+
+4. **Rationale**: This workflow ensures:
+   - Clean, atomic commits representing logical completion points
+   - All code passing quality gates before entering version control
+   - Clear commit history enabling easy navigation and rollback
+   - Prevention of broken commits that fail CI pipelines
+   - Release notes are immediately useful to end users
+
+## Governance
+
+This constitution supersedes all other practices and informal conventions. All PRs and code reviews must verify compliance with these principles. Complexity introduced must be justified against the principles and documented.
+
+**Constitution Authority**: These principles are non-negotiable. Exceptions require explicit discussion and documentation in PR comments.
+
+**Amendments**: Changes to this constitution require:
+1. Clear justification
+2. Community/maintainer discussion
+3. Documentation of rationale
+4. Migration plan for any breaking changes
+
+**Version**: 1.6.0 | **Ratified**: 2025-11-02 | **Last Amended**: 2026-10-20

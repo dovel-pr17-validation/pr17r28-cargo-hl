@@ -1,0 +1,59 @@
+{
+    "rust-analyzer.rustfmt.extraArgs": [
+        "+nightly"
+    ],
+    "coverage-gutters.coverageBaseDir": "target",
+    "coverage-gutters.coverageFileNames": [
+        "lcov.info"
+    ],
+    "cSpell.ignoreRegExpList": [
+        "/\"[^\"]*\\\\u{1b}\\[[^\"]*\"/g",
+        "/r#\".*\\\\u001b\\[.*\"#/g",
+        "/\"[^\"]*\\\\x1b\\[[^\"]*\"/g"
+    ],
+    "cSpell.words": [
+        "AKBNIJGHERHBNMCKJABHSDJ",
+        "amet",
+        "ampm",
+        "april",
+        "bfnrt",
+        "bytefmt",
+        "cdef",
+        "cpus",
+        "Deque",
+        "EVFILT",
+        "february",
+        "FFNOP",
+        "friday",
+        "ibuf",
+        "itoa",
+        "january",
+        "july",
+        "june",
+        "naaaa",
+        "nbbbb",
+        "november",
+        "october",
+        "orem",
+        "psum",
+        "saturday",
+        "stty",
+        "thursday",
+        "tuesday",
+        "unexp",
+        "unhex",
+        "wednesday",
+        "wyhash"
+    ],
+    "chat.promptFilesRecommendations": {
+        "speckit.constitution": true,
+        "speckit.specify": true,
+        "speckit.plan": true,
+        "speckit.tasks": true,
+        "speckit.implement": true
+    },
+    "chat.tools.terminal.autoApprove": {
+        ".specify/scripts/bash/": true,
+        ".specify/scripts/powershell/": true
+    }
+}

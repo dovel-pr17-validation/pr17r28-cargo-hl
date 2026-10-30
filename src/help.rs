@@ -1,0 +1,139 @@
+// std imports
+use std::{fmt, io, os};
+
+// third-party imports
+use owo_colors::OwoColorize;
+use terminal_size::terminal_size_of;
+
+pub trait Format {
+    fn format_grouped_list<G, V, GI, I>(&mut self, groups: GI) -> io::Result<()>
+    where
+        GI: IntoIterator<Item = (G, I)>,
+        I: IntoIterator<Item = V>,
+        G: fmt::Display,
+        V: AsRef<str>;
+
+    fn format_raw_list<I, V>(&mut self, items: I) -> io::Result<()>
+    where
+        I: IntoIterator<Item = V>,
+        V: AsRef<str>;
+}
+
+pub struct Formatter<O> {
+    width: Option<usize>,
+    output: O,
+}
+
+impl<O> Formatter<O>
+where
+    O: io::Write,
+{
+    pub fn new(output: O) -> Self
+    where
+        O: io::IsTerminal + AsOsHandle,
+    {
+        let width = if output.is_terminal() {
+            terminal_size_of(&output).map(|d| d.0.0)
+        } else {
+            None
+        };
+
+        Self::with_width(output, width.map(usize::from))
+    }
+
+    pub fn with_width(output: O, width: Option<usize>) -> Self {
+        Self { output, width }
+    }
+
+    pub fn format_grouped_list<G, V, GI, I>(&mut self, groups: GI) -> io::Result<()>
+    where
+        GI: IntoIterator<Item = (G, I)>,
+        I: IntoIterator<Item = V>,
+        G: fmt::Display,
+        V: AsRef<str>,
+    {
+        let Some(width) = self.width else {
+            return self.format_raw_list(groups.into_iter().map(|x| x.1).flat_map(|x| x.into_iter()));
+        };
+
+        let out = &mut self.output;
+
+        let mut groups = groups
+            .into_iter()
+            .map(|(g, items)| (g, items.into_iter().collect::<Vec<_>>()))
+            .collect::<Vec<_>>();
+
+        let max_len = groups
+            .iter()
+            .map(|x| x.1.iter().map(|x| x.as_ref().len()).max().unwrap_or(0))
+            .max()
+            .unwrap_or(0);
+
+        let columns = width / (max_len + 4);
+
+        for (group, items) in groups.iter_mut() {
+            writeln!(out, "{}:", group.bold())?;
+
+            let rows = items.len().div_ceil(columns);
+
+            for row in 0..rows {
+                for col in 0..columns {
+                    if let Some(val) = items.get(row + col * rows) {
+                        write!(out, "• {:width$}", val.as_ref(), width = max_len + 2)?;
+                    }
+                }
+                writeln!(out)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn format_raw_list<I, V>(&mut self, items: I) -> io::Result<()>
+    where
+        I: IntoIterator<Item = V>,
+        V: AsRef<str>,
+    {
+        for item in items {
+            writeln!(&mut self.output, "{}", item.as_ref())?;
+        }
+        Ok(())
+    }
+}
+
+impl<O> Format for Formatter<O>
+where
+    O: io::Write,
+{
+    #[inline]
+    fn format_grouped_list<G, V, GI, I>(&mut self, groups: GI) -> io::Result<()>
+    where
+        GI: IntoIterator<Item = (G, I)>,
+        I: IntoIterator<Item = V>,
+        G: fmt::Display,
+        V: AsRef<str>,
+    {
+        self.format_grouped_list(groups)
+    }
+
+    #[inline]
+    fn format_raw_list<I, V>(&mut self, items: I) -> io::Result<()>
+    where
+        I: IntoIterator<Item = V>,
+        V: AsRef<str>,
+    {
+        self.format_raw_list(items)
+    }
+}
+
+#[cfg(not(windows))]
+pub trait AsOsHandle: os::fd::AsFd {}
+#[cfg(not(windows))]
+impl<T: os::fd::AsFd> AsOsHandle for T {}
+
+#[cfg(windows)]
+pub trait AsOsHandle: os::windows::io::AsHandle {}
+#[cfg(windows)]
+impl<T: os::windows::io::AsHandle> AsOsHandle for T {}
+
+#[cfg(test)]
+mod tests;

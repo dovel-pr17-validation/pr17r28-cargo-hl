@@ -1,0 +1,545 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "condition": {
+      "type": "string",
+      "pattern": "^(!)?((os|mode):.+)$",
+      "description": "Condition string in format 'os:macos', 'mode:follow', '!mode:follow', etc. Valid OS values: macos, linux, windows, unix. Valid mode values: view, follow.",
+      "examples": [
+        "os:macos",
+        "os:linux",
+        "os:windows",
+        "os:unix",
+        "mode:view",
+        "mode:follow",
+        "!mode:follow",
+        "!os:windows"
+      ]
+    },
+    "conditional-args": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["if"],
+      "properties": {
+        "if": {
+          "$ref": "#/definitions/condition",
+          "description": "Condition that must be met for these args/env to apply"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments to append when condition is met"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables to set when condition is met"
+        }
+      }
+    },
+    "pager-role": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether to enable pager for this role (required for follow mode, implicit for view mode)"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional arguments to append to the base command for this role"
+        }
+      }
+    },
+    "pager-modes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "view": {
+          "$ref": "#/definitions/pager-role",
+          "description": "Configuration for view mode (non-follow)"
+        },
+        "follow": {
+          "$ref": "#/definitions/pager-role",
+          "description": "Configuration for follow mode"
+        }
+      }
+    },
+    "pager-profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Profile name"
+        },
+        "command": {
+          "type": "string",
+          "description": "Base command (executable) for the pager"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Base arguments for the pager"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables to set when invoking the pager"
+        },
+        "delimiter": {
+          "type": "string",
+          "enum": ["newline", "nul"],
+          "description": "Output entry delimiter when this pager is used"
+        },
+        "modes": {
+          "$ref": "#/definitions/pager-modes",
+          "description": "Mode-specific configuration (view and follow)"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/conditional-args"
+          },
+          "description": "Conditional arguments and environment variables based on platform (OS) and mode"
+        }
+      }
+    },
+    "pager-candidate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "profile": {
+              "type": "string",
+              "description": "Reference to a named pager profile"
+            },
+            "if": {
+              "$ref": "#/definitions/condition",
+              "description": "Optional condition; if specified the candidate is only considered when the condition is met"
+            }
+          },
+          "required": ["profile"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "env": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "Simple environment variable reference (applies to both view and follow modes)"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "pager": {
+                      "type": "string",
+                      "description": "Environment variable for view mode (or both modes if follow not specified)"
+                    },
+                    "follow": {
+                      "type": "string",
+                      "description": "Environment variable for follow mode"
+                    },
+                    "delimiter": {
+                      "type": "string",
+                      "description": "Environment variable for delimiter override (only applies to direct commands, not profile references)"
+                    }
+                  },
+                  "description": "Structured environment variable reference with role-specific variables"
+                }
+              ]
+            },
+            "profiles": {
+              "type": "boolean",
+              "description": "When true, values starting with '@' in the resolved environment variable are treated as profile references. Defaults to false."
+            },
+            "if": {
+              "$ref": "#/definitions/condition",
+              "description": "Optional condition; if specified the candidate is only considered when the condition is met"
+            }
+          },
+          "required": ["env"]
+        }
+      ]
+    },
+    "pager-config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/pager-candidate"
+          },
+          "description": "List of pager candidates to try in order. Each candidate can be an environment variable reference or a profile reference."
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/pager-profile"
+          },
+          "description": "List of named pager profiles defining commands and role-specific arguments"
+        }
+      }
+    },
+    "input-info-layout": {
+      "type": "string",
+      "enum": ["auto", "none", "minimal", "compact", "full"]
+    },
+    "display-variant": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ascii": {
+              "type": "string"
+            },
+            "unicode": {
+              "type": "string"
+            }
+          },
+          "required": ["ascii", "unicode"]
+        }
+      ]
+    }
+  },
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "title": "JSON Schema URI"
+    },
+    "time-format": {
+      "type": "string"
+    },
+    "time-zone": {
+      "type": "string"
+    },
+    "input-info": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/input-info-layout"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/input-info-layout"
+          }
+        }
+      ]
+    },
+    "ascii": {
+      "type": "string",
+      "enum": ["auto", "always", "never"]
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "predefined": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "time": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "show": {
+                  "type": "string"
+                },
+                "names": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["names"]
+            },
+            "logger": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "names": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["names"]
+            },
+            "level": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "show": {
+                  "type": "string"
+                },
+                "variants": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "names": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "values": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "error": {
+                            "type": "array",
+                            "items": {
+                              "type": ["string", "integer"]
+                            }
+                          },
+                          "warning": {
+                            "type": "array",
+                            "items": {
+                              "type": ["string", "integer"]
+                            }
+                          },
+                          "info": {
+                            "type": "array",
+                            "items": {
+                              "type": ["string", "integer"]
+                            }
+                          },
+                          "debug": {
+                            "type": "array",
+                            "items": {
+                              "type": ["string", "integer"]
+                            }
+                          },
+                          "trace": {
+                            "type": "array",
+                            "items": {
+                              "type": ["string", "integer"]
+                            }
+                          }
+                        }
+                      },
+                      "level": {
+                        "type": "string",
+                        "enum": ["error", "warning", "info", "debug", "trace"]
+                      }
+                    },
+                    "required": ["names"]
+                  }
+                }
+              },
+              "required": ["variants"]
+            },
+            "message": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "names": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["names"]
+            },
+            "caller": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "names": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["names"]
+            },
+            "caller-file": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "names": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["names"]
+            },
+            "caller-line": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "names": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["names"]
+            }
+          }
+        },
+        "ignore": {
+          "type": "array",
+          "items": [
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "hide": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "formatting": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "flatten": {
+          "type": "string",
+          "enum": ["never", "always"]
+        },
+        "message": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "auto-quoted",
+                "always-quoted",
+                "always-double-quoted",
+                "delimited",
+                "raw"
+              ]
+            }
+          }
+        },
+        "expansion": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["never", "inline", "auto", "always"]
+            }
+          }
+        },
+        "punctuation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "logger-name-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "field-key-value-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "string-opening-quote": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "string-closing-quote": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "source-location-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "caller-name-file-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "hidden-fields-indicator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "level-left-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "level-right-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "input-number-prefix": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "input-number-left-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "input-number-right-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "input-name-left-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "input-name-right-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "input-name-clipping": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "input-name-common-part": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "array-separator": {
+              "$ref": "#/definitions/display-variant"
+            },
+            "message-delimiter": {
+              "$ref": "#/definitions/display-variant"
+            }
+          }
+        },
+        "prettify-field-keys": {
+          "type": "boolean"
+        }
+      }
+    },
+    "concurrency": {
+      "type": ["integer", "null"]
+    },
+    "theme": {
+      "type": "string"
+    },
+    "theme-overlays": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ordered list of theme overlays to apply on top of the base theme and main configured theme"
+    },
+    "pager": {
+      "$ref": "#/definitions/pager-config",
+      "description": "Pager configuration containing a list of candidates to try in order and named pager profiles"
+    }
+  }
+}

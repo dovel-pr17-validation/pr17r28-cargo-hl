@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Theme",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "$palette": {
+      "type": "array"
+    },
+    "version": {},
+    "tags": {
+      "type": "array"
+    },
+    "styles": {
+      "type": "object"
+    },
+    "elements": {
+      "type": "object"
+    },
+    "levels": {
+      "type": "object"
+    },
+    "indicators": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^1\\.(0|[1-9][0-9]*)$"
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "$ref": "https://raw.githubusercontent.com/pamburus/hl/v0.36.5/schema/json/theme.schema.v1.json"
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "version"
+          ]
+        }
+      },
+      "then": {
+        "$ref": "https://raw.githubusercontent.com/pamburus/hl/v0.36.5/schema/json/theme.schema.v0.json"
+      }
+    }
+  ]
+}

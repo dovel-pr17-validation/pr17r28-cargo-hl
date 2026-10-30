@@ -1,0 +1,12 @@
+exclude = [
+  "src/testing/assets/fixtures/themes/malformed.toml",
+  "src/testing/assets/fixtures/themes/test-unknown-elements.toml",
+]
+
+[formatting]
+column_width = 128
+reorder_keys = false
+
+[[rule]]
+include = ["etc/defaults/themes/*.toml"]
+schema = { path = "schema/json/theme.schema.json", enabled = true }
